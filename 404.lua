@@ -1,86 +1,97 @@
--- Load Orion Library
-local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
+-- Упрощённый интерфейс (минимальная замена Orion)
+local SimpleUI = {}
+function SimpleUI:CreateWindow(title)
+    local window = {Visible = false}
+    print("Интерфейс " .. title .. " создан! Используйте клавишу Delete для переключения.")
+    return {
+        MakeTab = function(name)
+            return {
+                AddToggle = function(options)
+                    local toggled = false
+                    print("Переключатель '" .. options.Name .. "' добавлен (по умолчанию: " .. tostring(options.Default) .. ")")
+                    return {
+                        Set = function(value)
+                            toggled = value
+                            print(options.Name .. " установлен на: " .. tostring(toggled))
+                            options.Callback(value)
+                        end,
+                        Get = function() return toggled end
+                    }
+                end
+            }
+        end,
+        Toggle = function()
+            window.Visible = not window.Visible
+            print("Интерфейс видим: " .. tostring(window.Visible))
+        end,
+        Enable = function() window.Visible = true end,
+        Disable = function() window.Visible = false end
+    }
+end
+function SimpleUI:MakeNotification(title, content, time)
+    print("Уведомление: " .. title .. " - " .. content .. " (длительность: " .. time .. " сек)")
+end
 
--- Services
+-- Инициализация окна
+local Window = SimpleUI:CreateWindow("RIVALS - v3")
+
+-- Сервисы
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- Variables
+-- Переменные
 local ESPEnabled = false
 local AimbotEnabled = false
 local IsAiming = false
 local MenuVisible = false
 
--- Create Window (hidden by default)
-local Window = OrionLib:MakeWindow({
-    Name = "RIVALS - Lite",
-    HidePremium = false,
-    SaveConfig = true,
-    ConfigFolder = "RivalsLiteConfig",
-    IntroEnabled = false
-})
-
--- Toggle Menu with Delete
+-- Переключение меню клавишей Delete
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Delete then
         MenuVisible = not MenuVisible
-        if MenuVisible then
-            Window:Enable()
-        else
-            Window:Disable()
-        end
+        Window:Toggle()
     end
 end)
 
--- Success Notification (Centered and Prominent)
-OrionLib:MakeNotification({
-    Name = "RIVALS Lite",
-    Content = "Script Successfully Loaded!\nPress Delete to Toggle Menu",
-    Time = 5,
-    -- Note: Orion doesn't natively support "center screen" positioning,
-    -- but this will be more prominent with \n for multi-line
-})
+-- Уведомление при запуске
+SimpleUI:MakeNotification("RIVALS v3", "Скрипт успешно загружен!\nНажмите Delete для открытия меню.", 5)
 
--- Tab 1: ESP
-local ESPTab = Window:MakeTab({
-    Name = "ESP",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-})
-
--- Simple ESP with Boxes
-local function CreateESP(player)
-    if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        local Box = Instance.new("BoxHandleAdornment")
-        Box.Name = "ESPBox"
-        Box.Parent = player.Character.HumanoidRootPart
-        Box.Size = Vector3.new(5, 7, 5)
-        Box.Color3 = Color3.fromRGB(255, 0, 0)
-        Box.Transparency = 0.7
-        Box.AlwaysOnTop = true
-        Box.Adornee = player.Character.HumanoidRootPart
-        Box.ZIndex = 10
-    end
-end
-
-ESPTab:AddToggle({
+-- Вкладка ESP
+local ESPTab = Window:MakeTab("ESP")
+local ESPToggle = ESPTab:AddToggle({
     Name = "Enable ESP",
     Default = false,
-    Callback = function(Value)
-        ESPEnabled = Value
+    Callback = function(value)
+        ESPEnabled = value
         if ESPEnabled then
             for _, player in pairs(Players:GetPlayers()) do
-                if player.Character then
-                    CreateESP(player)
+                if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    local Box = Instance.new("BoxHandleAdornment")
+                    Box.Name = "ESPBox"
+                    Box.Parent = player.Character.HumanoidRootPart
+                    Box.Size = Vector3.new(5, 7, 5)
+                    Box.Color3 = Color3.fromRGB(255, 0, 0)
+                    Box.Transparency = 0.7
+                    Box.AlwaysOnTop = true
+                    Box.Adornee = player.Character.HumanoidRootPart
+                    Box.ZIndex = 10
                 end
             end
             Players.PlayerAdded:Connect(function(player)
                 player.CharacterAdded:Connect(function()
-                    if ESPEnabled then
-                        CreateESP(player)
+                    if ESPEnabled and player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                        local Box = Instance.new("BoxHandleAdornment")
+                        Box.Name = "ESPBox"
+                        Box.Parent = player.Character.HumanoidRootPart
+                        Box.Size = Vector3.new(5, 7, 5)
+                        Box.Color3 = Color3.fromRGB(255, 0, 0)
+                        Box.Transparency = 0.7
+                        Box.AlwaysOnTop = true
+                        Box.Adornee = player.Character.HumanoidRootPart
+                        Box.ZIndex = 10
                     end
                 end)
             end)
@@ -94,14 +105,17 @@ ESPTab:AddToggle({
     end
 })
 
--- Tab 2: Aimbot
-local AimbotTab = Window:MakeTab({
-    Name = "Aimbot",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
+-- Вкладка Aimbot
+local AimbotTab = Window:MakeTab("Aimbot")
+local AimbotToggle = AimbotTab:AddToggle({
+    Name = "Enable Aimbot (RMB)",
+    Default = false,
+    Callback = function(value)
+        AimbotEnabled = value
+    end
 })
 
--- Closest Player Function
+-- Функция поиска ближайшего игрока
 local function GetClosestPlayer()
     local ClosestPlayer = nil
     local ShortestDistance = math.huge
@@ -120,15 +134,7 @@ local function GetClosestPlayer()
     return ClosestPlayer
 end
 
-AimbotTab:AddToggle({
-    Name = "Enable Aimbot (RMB)",
-    Default = false,
-    Callback = function(Value)
-        AimbotEnabled = Value
-    end
-})
-
--- RMB Aimbot Logic
+-- Логика Aimbot
 UserInputService.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 and AimbotEnabled then
         IsAiming = true
@@ -141,7 +147,7 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- Main Loop
+-- Главный цикл
 RunService.RenderStepped:Connect(function()
     if AimbotEnabled and IsAiming and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         local Target = GetClosestPlayer()
@@ -151,6 +157,5 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Initialize (hidden)
-OrionLib:Init()
+-- Инициализация (скрыто)
 Window:Disable()
