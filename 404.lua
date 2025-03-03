@@ -1,120 +1,69 @@
--- Сервисы Roblox
+-- Проверяем, что скрипт запускается в Roblox
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+-- Получаем сервис игроков и локального игрока
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local LocalPlayer = Players.LocalPlayer
-local Camera = game.Workspace.CurrentCamera
+local player = Players.LocalPlayer
 
--- Переменные состояния
-local ESPActive = false
-local AimbotActive = false
-local Aiming = false
+-- Ждем, пока загрузится персонаж и интерфейс игрока
+if not player.Character then
+    player.CharacterAdded:Wait()
+end
+local playerGui = player:WaitForChild("PlayerGui")
 
--- Функция для создания ESP
-local function AddESP(player)
-    if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        local box = Instance.new("BoxHandleAdornment")
-        box.Name = "ESPBox"
-        box.Parent = player.Character.HumanoidRootPart
-        box.Size = Vector3.new(4, 6, 4)
-        box.Color3 = Color3.new(1, 0, 0)
-        box.Transparency = 0.6
-        box.AlwaysOnTop = true
-        box.Adornee = player.Character.HumanoidRootPart
-    end
+-- Создаем ScreenGui (основной контейнер для интерфейса)
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "Error404Gui"
+screenGui.Parent = playerGui
+screenGui.ResetOnSpawn = false -- Не сбрасывать GUI при респавне
+
+-- Создаем затемняющий фон
+local backdrop = Instance.new("Frame")
+backdrop.Name = "Backdrop"
+backdrop.Size = UDim2.new(1, 0, 1, 0) -- Полный экран
+backdrop.Position = UDim2.new(0, 0, 0, 0)
+backdrop.BackgroundColor3 = Color3.fromRGB(0, 0, 0) -- Черный цвет
+backdrop.BackgroundTransparency = 0.5 -- Полупрозрачный
+backdrop.Parent = screenGui
+
+-- Создаем текстовое сообщение "404 - Not Found"
+local textLabel = Instance.new("TextLabel")
+textLabel.Name = "ErrorMessage"
+textLabel.Size = UDim2.new(0.5, 0, 0.2, 0)
+textLabel.Position = UDim2.new(0.25, 0, 0.4, 0) -- Центр экрана
+textLabel.BackgroundTransparency = 1 -- Прозрачный фон
+textLabel.Text = "404 - Not Found"
+textLabel.TextColor3 = Color3.fromRGB(255, 0, 0) -- Красный текст
+textLabel.TextScaled = true -- Автоматический размер текста
+textLabel.Font = Enum.Font.SourceSansBold
+textLabel.Parent = screenGui
+
+-- Добавляем звуковой эффект
+local sound = Instance.new("Sound")
+sound.Name = "ErrorSound"
+sound.SoundId = "rbxassetid://9120386436" -- ID звука ошибки (можно заменить)
+sound.Volume = 0.5
+sound.Parent = screenGui
+sound:Play()
+
+-- Анимация появления
+for i = 1, 10 do
+    backdrop.BackgroundTransparency = 0.5 - (i * 0.05) -- Плавное затемнение
+    textLabel.TextTransparency = 1 - (i * 0.1) -- Плавное появление текста
+    wait(0.05) -- Задержка для анимации
 end
 
--- Функция для удаления ESP
-local function RemoveESP()
-    for _, player in pairs(Players:GetPlayers()) do
-        if player.Character and player.Character.HumanoidRootPart:FindFirstChild("ESPBox") then
-            player.Character.HumanoidRootPart.ESPBox:Destroy()
-        end
-    end
+-- Держим сообщение 3 секунды, затем убираем
+wait(3)
+
+-- Анимация исчезновения
+for i = 1, 10 do
+    backdrop.BackgroundTransparency = backdrop.BackgroundTransparency + 0.05
+    textLabel.TextTransparency = textLabel.TextTransparency + 0.1
+    wait(0.05)
 end
 
--- Переключение ESP
-local function ToggleESP(state)
-    ESPActive = state
-    if ESPActive then
-        for _, player in pairs(Players:GetPlayers()) do
-            spawn(function() AddESP(player) end)
-        end
-        Players.PlayerAdded:Connect(function(player)
-            player.CharacterAdded:Connect(function()
-                if ESPActive then AddESP(player) end
-            end)
-        end)
-    else
-        RemoveESP()
-    end
-    print("ESP: " .. (ESPActive and "ВКЛ" or "ВЫКЛ"))
-end
-
--- Функция поиска ближайшего игрока
-local function FindClosestPlayer()
-    local closest = nil
-    local minDistance = math.huge
-    local mousePos = UserInputService:GetMouseLocation()
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-            local headPos = Camera:WorldToViewportPoint(player.Character.Head.Position)
-            local distance = (Vector2.new(headPos.X, headPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude
-            if distance < minDistance then
-                minDistance = distance
-                closest = player
-            end
-        end
-    end
-    return closest
-end
-
--- Переключение Aimbot
-local function ToggleAimbot(state)
-    AimbotActive = state
-    print("Aimbot: " .. (AimbotActive and "ВКЛ" or "ВЫКЛ"))
-end
-
--- Обработка ввода
-UserInputService.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 and AimbotActive then
-        Aiming = true
-    elseif input.KeyCode == Enum.KeyCode.F1 then
-        ToggleESP(not ESPActive)
-    elseif input.KeyCode == Enum.KeyCode.F2 then
-        ToggleAimbot(not AimbotActive)
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        Aiming = false
-    end
-end)
-
--- Проверка готовности игры
-local function WaitForGameReady()
-    local maxWait = 15 -- Увеличено до 15 секунд для учёта очереди
-    local elapsed = 0
-    print("Ожидание загрузки игры (максимум " .. maxWait .. " сек)...")
-    repeat
-        wait(1)
-        elapsed = elapsed + 1
-    until game:IsLoaded() or elapsed >= maxWait
-    if game:IsLoaded() then
-        print("Игра загружена, скрипт активен!")
-        RunService.RenderStepped:Connect(function()
-            if AimbotActive and Aiming and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                local target = FindClosestPlayer()
-                if target and target.Character and target.Character:FindFirstChild("Head") then
-                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.Head.Position)
-                end
-            end
-        end)
-    else
-        print("Игра не загрузилась в течение " .. maxWait .. " секунд. Перезапустите и попробуйте снова.")
-    end
-end
-
--- Запуск
-WaitForGameReady()
+-- Удаляем GUI после завершения
+screenGui:Destroy()
