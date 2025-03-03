@@ -1,8 +1,8 @@
--- Упрощённый интерфейс (минимальная замена Orion)
+-- Упрощённый интерфейс (автономный, без внешних зависимостей)
 local SimpleUI = {}
 function SimpleUI:CreateWindow(title)
     local window = {Visible = false}
-    print("Интерфейс " .. title .. " создан! Используйте клавишу Delete для переключения.")
+    print("Интерфейс " .. title .. " создан! Используйте Delete для переключения.")
     return {
         MakeTab = function(name)
             return {
@@ -13,7 +13,9 @@ function SimpleUI:CreateWindow(title)
                         Set = function(value)
                             toggled = value
                             print(options.Name .. " установлен на: " .. tostring(toggled))
-                            options.Callback(value)
+                            if options.Callback then
+                                options.Callback(value)
+                            end
                         end,
                         Get = function() return toggled end
                     }
