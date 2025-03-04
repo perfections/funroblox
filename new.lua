@@ -314,7 +314,10 @@ local function FindClosestPlayer()
     local closest, minDistance = nil, math.huge
     local mousePos = UserInputService:GetMouseLocation()
     local playerPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position
-    if not playerPos then return nil end
+    if not playerPos then
+        print("No player position found")
+        return nil
+    end
 
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") and player.Character:FindFirstChild("Humanoid") then
@@ -330,11 +333,15 @@ local function FindClosestPlayer()
                         if screenDistance < minDistance and screenDistance < 300 then
                             minDistance = screenDistance
                             closest = player
+                            print("Target found: " .. player.Name .. " at distance " .. screenDistance)
                         end
                     end
                 end
             end
         end
+    end
+    if not closest then
+        print("No valid target found within radius")
     end
     return closest
 end
@@ -395,12 +402,17 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         UpdateESP()
     elseif input.KeyCode == Keybinds.AimbotAuto then
         AimbotAutoActive = not AimbotAutoActive
+        print("AimbotAutoActive set to: " .. tostring(AimbotAutoActive))
     elseif input.KeyCode == Keybinds.AimbotHold then
         AimbotHoldEnabled = not AimbotHoldEnabled
+        if not AimbotHoldEnabled then AimbotHoldActive = false end
+        print("AimbotHoldEnabled set to: " .. tostring(AimbotHoldEnabled))
     elseif input.UserInputType == Enum.UserInputType.MouseButton2 and AimbotHoldEnabled then
         AimbotHoldActive = true
+        print("AimbotHoldActive set to: true")
     elseif input.KeyCode == Keybinds.AutoFire then
         AutoFireActive = not AutoFireActive
+        print("AutoFireActive set to: " .. tostring(AutoFireActive))
     elseif input.KeyCode == Enum.KeyCode.Delete then
         ScriptActive = false
         RemoveESP()
@@ -412,26 +424,30 @@ end)
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         AimbotHoldActive = false
+        print("AimbotHoldActive set to: false")
     end
 end)
 
--- Перезапуск чита при смене лобби
+-- Перезапуск чита при смене раунда/лобби
 LocalPlayer.CharacterAdded:Connect(function()
     if ScriptActive then
         RemoveESP()
-        wait(2)
-        UpdateESP()
         AimbotAutoActive = false
         AimbotHoldEnabled = false
         AimbotHoldActive = false
         AutoFireActive = false
-        print("Скрипт перезапущен в новом лобби")
+        wait(2)
+        UpdateESP()
+        print("Скрипт перезапущен в новом раунде/лобби")
     end
 end)
 
 -- Логика чита
 RunService.RenderStepped:Connect(function()
-    if not ScriptActive or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
+    if not ScriptActive or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        print("Script paused: No character or HumanoidRootPart")
+        return
+    end
     
     if ESPActive then
         for _, player in pairs(Players:GetPlayers()) do
@@ -443,11 +459,14 @@ RunService.RenderStepped:Connect(function()
     
     if AimbotAutoActive or (AimbotHoldEnabled and AimbotHoldActive) then
         local target = FindClosestPlayer()
-        if target and target.Character and target.Character:FindFirstChild("Head") then
+        if target then
             local headPos = Camera:WorldToViewportPoint(target.Character.Head.Position)
             local mousePos = UserInputService:GetMouseLocation()
             local delta = Vector2.new(headPos.X, headPos.Y) - mousePos
             mousemoverel(delta.X * AimbotSmoothness, delta.Y * AimbotSmoothness)
+            print("Aiming at: " .. target.Name)
+        else
+            print("No target found")
         end
     end
     
@@ -457,6 +476,9 @@ RunService.RenderStepped:Connect(function()
             mouse1press()
             wait(0.05)
             mouse1release()
+            print("Firing at: " .. target.Name)
+        else
+            print("No target for AutoFire")
         end
     end
 end)
