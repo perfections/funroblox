@@ -1,12 +1,6 @@
 -- Защита от преждевременного выполнения
 if not game:IsLoaded() then
-    local success, err = pcall(function()
-        game.Loaded:Wait()
-    end)
-    if not success then
-        warn("Ошибка загрузки игры: " .. err)
-        return
-    end
+    game.Loaded:Wait()
 end
 
 -- Сервисы Roblox
@@ -20,22 +14,25 @@ local Mouse = LocalPlayer:GetMouse()
 
 -- Переменные состояния
 local ESPActive = false
-local AimbotActive = false
+local AimbotAutoActive = false -- Автоматический аимбот по X
+local AimbotHoldEnabled = false -- Включение режима зажима по V
+local AimbotHoldActive = false -- Активность зажима правой кнопки
 local AutoFireActive = false
+local AimbotSmoothness = 0.8
 local ScriptActive = true
-local InLobby = false
 
--- Ждем PlayerGui
-local playerGui
-local success, err = pcall(function()
-    playerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
-end)
-if not success or not playerGui then
-    warn("Не удалось получить PlayerGui: " .. (err or "время ожидания истекло"))
-    return
-end
+-- Бинды по умолчанию
+local Keybinds = {
+    ESP = Enum.KeyCode.F1,
+    AimbotAuto = Enum.KeyCode.X, -- Автоматический аимбот
+    AimbotHold = Enum.KeyCode.V, -- Включение режима зажима
+    AutoFire = Enum.KeyCode.Z,
+    Menu = Enum.KeyCode.RightShift,
+    Chat = Enum.KeyCode.T -- Клавиша для отправки сообщения с обходом
+}
 
--- Анимация "404 Activate"
+-- Анимация логотипа при запуске
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "Error404Gui"
 screenGui.ResetOnSpawn = false
@@ -106,52 +103,159 @@ end
 
 screenGui:Destroy()
 
--- Функция проверки, является ли игрок врагом
-local function IsEnemy(player)
-    if player == LocalPlayer then
-        print(player.Name, "это я, не враг")
-        return false
-    end
-    -- В Rivals считаем всех врагами, пока нет точной информации о командах
-    print(player.Name, "Считаем врагом (Rivals)")
-    return true
+-- GUI меню
+local MenuGui = Instance.new("ScreenGui")
+MenuGui.Name = "404Menu"
+MenuGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+MenuGui.ResetOnSpawn = false
+MenuGui.Enabled = false
+
+local MenuFrame = Instance.new("Frame")
+MenuFrame.Size = UDim2.new(0.3, 0, 0.5, 0)
+MenuFrame.Position = UDim2.new(0.35, 0, 0.25, 0)
+MenuFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MenuFrame.BorderSizePixel = 0
+MenuFrame.Parent = MenuGui
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Thickness = 1
+UIStroke.Color = Color3.fromRGB(255, 0, 0)
+UIStroke.Parent = MenuFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0.1, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "404 Rivals Cheat"
+Title.TextColor3 = Color3.fromRGB(255, 0, 0)
+Title.TextScaled = true
+Title.Font = Enum.Font.Code
+Title.Parent = MenuFrame
+
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, 0, 0.9, 0)
+ContentFrame.Position = UDim2.new(0, 0, 0.1, 0)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MenuFrame
+
+local function CreateSlider(name, minVal, maxVal, defaultVal, yPos, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.9, 0, 0.15, 0)
+    frame.Position = UDim2.new(0.05, 0, yPos, 0)
+    frame.BackgroundTransparency = 1
+    frame.Parent = ContentFrame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name .. ": " .. string.format("%.1f", defaultVal)
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextScaled = true
+    label.Font = Enum.Font.SourceSans
+    label.Parent = frame
+
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(0.3, 0, 0.2, 0)
+    bar.Position = UDim2.new(0.65, 0, 0.4, 0)
+    bar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    bar.Parent = frame
+
+    local knob = Instance.new("TextButton")
+    knob.Size = UDim2.new(0.1, 0, 1.5, 0)
+    knob.Position = UDim2.new((defaultVal - minVal) / (maxVal - minVal), 0, -0.25, 0)
+    knob.BackgroundColor3 = Color3.fromRGB(0, 191, 255)
+    knob.Text = ""
+    knob.Parent = bar
+
+    local dragging = false
+    knob.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    RunService.RenderStepped:Connect(function()
+        if dragging then
+            local mousePos = UserInputService:GetMouseLocation()
+            local framePos = bar.AbsolutePosition
+            local frameSize = bar.AbsoluteSize.X
+            local relativeX = math.clamp((mousePos.X - framePos.X) / frameSize, 0, 1)
+            knob.Position = UDim2.new(relativeX, 0, -0.25, 0)
+            local value = minVal + (relativeX * (maxVal - minVal))
+            label.Text = name .. ": " .. string.format("%.1f", value)
+            if name == "Aimbot Smoothness" then
+                AimbotSmoothness = value
+            elseif name == "ESP Transparency" then
+                ESPActive = value > 0
+                UpdateESP()
+            end
+            callback(value)
+        end
+    end)
 end
 
--- Улучшенный ESP
+local function CreateToggle(name, yPos, state, toggleFunc)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.9, 0, 0.15, 0)
+    frame.Position = UDim2.new(0.05, 0, yPos, 0)
+    frame.BackgroundTransparency = 1
+    frame.Parent = ContentFrame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextScaled = true
+    label.Font = Enum.Font.SourceSans
+    label.Parent = frame
+
+    local switch = Instance.new("TextButton")
+    switch.Size = UDim2.new(0.2, 0, 0.8, 0)
+    switch.Position = UDim2.new(0.75, 0, 0.1, 0)
+    switch.BackgroundColor3 = state and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    switch.Text = state and "ON" or "OFF"
+    switch.TextColor3 = Color3.fromRGB(255, 255, 255)
+    switch.TextScaled = true
+    switch.Font = Enum.Font.SourceSans
+    switch.Parent = frame
+
+    switch.MouseButton1Click:Connect(function()
+        state = not state
+        switch.BackgroundColor3 = state and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        switch.Text = state and "ON" or "OFF"
+        toggleFunc(state)
+    end)
+end
+
+-- Настройка интерфейса
+CreateToggle("AutoFire", 0, AutoFireActive, function(state) AutoFireActive = state end)
+CreateSlider("ESP Transparency", 0, 1, ESPActive and 0.5 or 0, 0.15, function(value) ESPActive = value > 0; UpdateESP() end)
+CreateSlider("Aimbot Smoothness", 0.1, 1, AimbotSmoothness, 0.3, function(value) AimbotSmoothness = value end)
+
+local Contacts = Instance.new("TextLabel")
+Contacts.Size = UDim2.new(1, 0, 0.1, 0)
+Contacts.Position = UDim2.new(0, 0, 0.9, 0)
+Contacts.BackgroundTransparency = 1
+Contacts.Text = "TG: <font color=\"rgb(0,191,255)\"><u>t.me/psycheqow</u></font> | DS: <font color=\"rgb(0,191,255)\"><u>psycheqow</u></font>"
+Contacts.TextColor3 = Color3.fromRGB(255, 255, 255)
+Contacts.TextScaled = true
+Contacts.Font = Enum.Font.SourceSans
+Contacts.RichText = true
+Contacts.Parent = MenuFrame
+
+-- Функции
 local function AddESP(player)
-    if not player.Character then
-        print(player.Name, "Нет персонажа")
-        return
-    end
+    if player == LocalPlayer or not player.Character or not ESPActive then return end
     local humanoid = player.Character:FindFirstChild("Humanoid")
     local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
-    
-    if not humanoid then
-        print(player.Name, "Нет Humanoid")
-        return
-    end
-    if not rootPart then
-        print(player.Name, "Нет HumanoidRootPart")
-        return
-    end
+    if not humanoid or not rootPart or humanoid.Health <= 0 then return end
 
-    if humanoid.Health <= 0 then
-        print(player.Name, "Мёртв, пропускаем")
-        return
-    end
-
-    if not IsEnemy(player) then
-        print(player.Name, "Союзник, пропускаем")
-        return
-    end
-
-    -- Удаляем старый ESP
-    if rootPart:FindFirstChild("ESPBox") then
-        rootPart.ESPBox:Destroy()
-    end
-    if rootPart:FindFirstChild("HealthBar") then
-        rootPart.HealthBar:Destroy()
-    end
+    if rootPart:FindFirstChild("ESPBox") then rootPart.ESPBox:Destroy() end
+    if rootPart:FindFirstChild("HealthBar") then rootPart.HealthBar:Destroy() end
 
     local box = Instance.new("BoxHandleAdornment")
     box.Name = "ESPBox"
@@ -180,10 +284,8 @@ local function AddESP(player)
         if newHealth <= 0 then
             box:Destroy()
             billboard:Destroy()
-            print(player.Name, "Умер, ESP удалён")
         end
     end)
-    print("ESP успешно добавлен для", player.Name)
 end
 
 local function RemoveESP()
@@ -197,135 +299,161 @@ local function RemoveESP()
             end
         end
     end
-    print("ESP удалён для всех")
 end
 
-local function ToggleESP(state)
-    ESPActive = state
-    print("ESP:", ESPActive and "ВКЛ" or "ВЫКЛ")
-    if ESPActive then
-        RemoveESP()
-        UpdateESP()
-    else
-        RemoveESP()
-    end
-end
-
--- Функция обновления ESP
 local function UpdateESP()
     RemoveESP()
-    for _, player in pairs(Players:GetPlayers()) do
-        spawn(function()
-            wait(0.1) -- Небольшая задержка для каждого игрока
-            AddESP(player)
-        end)
-    end
-    print("ESP обновлён для всех игроков")
-end
-
--- Проверка активной катаны
-local function HasActiveKatana(player)
-    if player and player.Character then
-        for _, child in pairs(player.Character:GetChildren()) do
-            if child:IsA("Tool") and child:FindFirstChild("StarEffect") then
-                return true
-            end
+    if ESPActive then
+        for _, player in pairs(Players:GetPlayers()) do
+            spawn(function() AddESP(player) end)
         end
     end
-    return false
 end
 
--- Проверка линии видимости
-local function CanHitTarget(target)
-    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or not target or not target.Character or not target.Character:FindFirstChild("Head") then
-        return false
-    end
-    local origin = LocalPlayer.Character.HumanoidRootPart.Position
-    local targetPos = target.Character.Head.Position
-    local ray = Ray.new(origin, (targetPos - origin).Unit * 300)
-    local hit, position = Workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character, target.Character})
-    return hit == nil or hit:IsDescendantOf(target.Character)
-end
-
--- Поиск ближайшего живого противника
 local function FindClosestPlayer()
-    local closest = nil
-    local minDistance = math.huge
+    local closest, minDistance = nil, math.huge
     local mousePos = UserInputService:GetMouseLocation()
+    local playerPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position
+    if not playerPos then return nil end
+
     for _, player in pairs(Players:GetPlayers()) do
-        if IsEnemy(player) and player.Character and player.Character:FindFirstChild("Head") and player.Character:FindFirstChild("Humanoid") then
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") and player.Character:FindFirstChild("Humanoid") then
             local humanoid = player.Character.Humanoid
-            if humanoid.Health > 0 and not HasActiveKatana(player) then
-                local headPos = Camera:WorldToViewportPoint(player.Character.Head.Position)
-                if headPos.Z > 0 then
-                    local distance = (Vector2.new(headPos.X, headPos.Y) - mousePos).Magnitude
-                    if distance < minDistance and distance < 300 then
-                        minDistance = distance
-                        closest = player
-                        print("Найден живой враг:", player.Name)
+            if humanoid.Health > 0 then
+                local headPos = player.Character.Head.Position
+                local distance = (headPos - playerPos).Magnitude
+                -- Ограничение радиуса для большой карты (1000 студий)
+                if distance < 1000 then
+                    local screenPos = Camera:WorldToViewportPoint(headPos)
+                    if screenPos.Z > 0 then
+                        local screenDistance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                        if screenDistance < minDistance and screenDistance < 300 then
+                            minDistance = screenDistance
+                            closest = player
+                        end
                     end
                 end
-            else
-                print(player.Name, "Мёртв или с катаной, пропускаем")
             end
         end
     end
-    if not closest then print("Живой враг не найден") end
     return closest
 end
 
-local function ToggleAimbot(state)
-    AimbotActive = state
-    print("Silent Aimbot:", AimbotActive and "ВКЛ" or "ВЫКЛ")
-end
-
-local function ToggleAutoFire(state)
-    AutoFireActive = state
-    print("AutoFire:", AutoFireActive and "ВКЛ" or "ВЫКЛ")
-end
-
--- Обработка ввода
-UserInputService.InputBegan:Connect(function(input)
-    if not ScriptActive then return end
-    if input.KeyCode == Enum.KeyCode.F1 then
-        ToggleESP(not ESPActive)
-    elseif input.KeyCode == Enum.KeyCode.X then
-        ToggleAimbot(not AimbotActive)
-    elseif input.KeyCode == Enum.KeyCode.Z then
-        ToggleAutoFire(not AutoFireActive)
-    elseif input.KeyCode == Enum.KeyCode.Delete then
-        ScriptActive = false
-        ToggleESP(false)
-        ToggleAimbot(false)
-        ToggleAutoFire(false)
-        RemoveESP()
-        print("404 Script Unloaded")
-    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
-        local target = FindClosestPlayer()
-        if AimbotActive and target and HasActiveKatana(target) then
-            return -- Блокировка стрельбы
+-- Чтение уведомлений о скинах (оставлено для мониторинга)
+spawn(function()
+    while ScriptActive do
+        for _, gui in pairs(playerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") then
+                for _, child in pairs(gui:GetDescendants()) do
+                    if child:IsA("TextLabel") and (child.Text:lower():find("skin") or child.Text:lower():find("reward")) then
+                        print("Новое уведомление:", child.Text)
+                    end
+                end
+            end
         end
+        wait(5)
     end
 end)
 
--- Silent Aimbot и AutoFire
+-- Обход фильтра чата
+local function SendChatMessage(message)
+    local badWords = {"fuck", "shit", "bitch", "ass", "damn", "hell"} -- Пример списка
+    local replacements = {"xKqP", "zXy7", "pLmN", "aBcD", "jKlM", "hIjK"} -- Случайные замены
+    local newMessage = message
+    for i, word in pairs(badWords) do
+        newMessage = newMessage:gsub(word, replacements[i] or "xXx")
+    end
+    game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(newMessage, "All")
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not ScriptActive or gameProcessed then return end
+    if input.KeyCode == Keybinds.Chat and UserInputService:GetFocusedTextBox() == nil then
+        local msg = game:GetService("Chat"):Chat(LocalPlayer, "Type your message (T to send)", Enum.ChatColor.Blue)
+        local userInputService = game:GetService("UserInputService")
+        local textBox = Instance.new("TextBox")
+        textBox.Size = UDim2.new(0, 200, 0, 50)
+        textBox.Position = UDim2.new(0.5, -100, 0.5, -25)
+        textBox.Text = ""
+        textBox.Parent = playerGui
+        textBox.FocusLost:Connect(function(enterPressed)
+            if enterPressed then
+                SendChatMessage(textBox.Text)
+                textBox:Destroy()
+            end
+        end)
+        userInputService.InputBegan:Connect(function(input)
+            if input.KeyCode == Enum.KeyCode.T then
+                SendChatMessage(textBox.Text)
+                textBox:Destroy()
+            end
+        end)
+    elseif input.KeyCode == Keybinds.Menu then
+        MenuGui.Enabled = not MenuGui.Enabled
+    elseif input.KeyCode == Keybinds.ESP then
+        ESPActive = not ESPActive
+        UpdateESP()
+    elseif input.KeyCode == Keybinds.AimbotAuto then
+        AimbotAutoActive = not AimbotAutoActive
+    elseif input.KeyCode == Keybinds.AimbotHold then
+        AimbotHoldEnabled = not AimbotHoldEnabled
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 and AimbotHoldEnabled then
+        AimbotHoldActive = true
+    elseif input.KeyCode == Keybinds.AutoFire then
+        AutoFireActive = not AutoFireActive
+    elseif input.KeyCode == Enum.KeyCode.Delete then
+        ScriptActive = false
+        RemoveESP()
+        MenuGui:Destroy()
+        print("404 Script Unloaded")
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        AimbotHoldActive = false
+    end
+end)
+
+-- Перезапуск чита при смене лобби
+LocalPlayer.CharacterAdded:Connect(function()
+    if ScriptActive then
+        RemoveESP()
+        wait(2)
+        UpdateESP()
+        AimbotAutoActive = false
+        AimbotHoldEnabled = false
+        AimbotHoldActive = false
+        AutoFireActive = false
+        print("Скрипт перезапущен в новом лобби")
+    end
+end)
+
+-- Логика чита
 RunService.RenderStepped:Connect(function()
     if not ScriptActive or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
     
-    if AimbotActive then
+    if ESPActive then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and not player.Character:FindFirstChild("ESPBox") then
+                AddESP(player)
+            end
+        end
+    end
+    
+    if AimbotAutoActive or (AimbotHoldEnabled and AimbotHoldActive) then
         local target = FindClosestPlayer()
         if target and target.Character and target.Character:FindFirstChild("Head") then
             local headPos = Camera:WorldToViewportPoint(target.Character.Head.Position)
             local mousePos = UserInputService:GetMouseLocation()
             local delta = Vector2.new(headPos.X, headPos.Y) - mousePos
-            local smoothFactor = 0.8
-            mousemoverel(delta.X * smoothFactor, delta.Y * smoothFactor)
+            mousemoverel(delta.X * AimbotSmoothness, delta.Y * AimbotSmoothness)
         end
     end
     
     if AutoFireActive then
         local target = FindClosestPlayer()
-        if target and not HasActiveKatana(target) and CanHitTarget(target) then
+        if target then
             mouse1press()
             wait(0.05)
             mouse1release()
@@ -333,42 +461,12 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Мониторинг состояния игры через RunService
-RunService.Heartbeat:Connect(function()
-    if not ScriptActive then return end
-
-    -- Проверка перехода в лобби
-    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        if not InLobby then
-            InLobby = true
-            RemoveESP()
-            print("Переход в лобби, ESP отключён")
-        end
-    -- Проверка начала новой игры
-    elseif InLobby and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        InLobby = false
-        if ESPActive then
-            wait(3) -- Увеличенная задержка для полной загрузки в Rivals
-            UpdateESP()
-            print("Начало новой игры, скрипт перезапущен")
-        end
-    end
-end)
-
--- Обновление для новых игроков
+-- Обновление после спавна
 Players.PlayerAdded:Connect(function(player)
     player.CharacterAdded:Connect(function()
         if ESPActive then
-            wait(1) -- Увеличенная задержка для новых игроков
+            wait(0.5)
             AddESP(player)
         end
     end)
-end)
-
--- Инициализация скрипта при запуске
-spawn(function()
-    wait(1)
-    if ESPActive then
-        UpdateESP()
-    end
 end)
